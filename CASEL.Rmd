@@ -1,0 +1,1979 @@
+---
+title: "Tobacco Susceptibility Measurement"
+author: "Scott I. Donaldson, PhD"
+date: "08/24/2026"
+editor_options: 
+  chunk_output_type: console
+---
+```{r Packages}
+#Packages
+library(readxl)
+library(dplyr)
+library(psych)
+library(mirt)
+library(ggplot2)
+library(mokken)
+library(WrightMap)
+library(lavaan)
+library(semTools)
+library(tidyverse)
+```
+```{r Import IPSOS data}
+IPSOS_Youth <- read_excel("Youth Ipsos 2026_Data for Scott.xlsx")
+
+```
+```{r Import PATH data}
+# Load PATH Wave 8 Youth data
+load("Wave8_Youth_DATA/DS8002/36498-8002-Data.rda")
+youth <- da36498.8002
+
+# Load PATH Wave 8 Adult / Young Adult data
+load("Wave8_YA_DATA/DS8001/36498-8001-Data.rda")
+adult <- da36498.8001
+
+# Create young adult sample from adult data
+ya <- adult[adult$R08R_A_AGECAT6 == "(1) 1 = 18 to 24 years old", ]
+
+```
+
+#Recode PATH Variables
+```{r Recode PATH susceptibility variables}
+# Recode susceptibility: 1 = lowest susceptibility, 4 = highest susceptibility
+recode_sus <- function(x) {
+  x_num <- as.numeric(x)
+  ifelse(is.na(x_num), NA, 5 - x_num)
+}
+
+# Harmonized PATH Youth susceptibility variables
+PATH_youth_sus <- youth %>%
+  dplyr::transmute(
+    source = "PATH",
+    dataset = "PATH youth",
+    group = "Youth",
+
+    # Nicotine pouches
+    np_curious  = recode_sus(R08_YA1103NP),
+    np_nextyear = recode_sus(R08_YA1206NP),
+    np_soon     = recode_sus(R08_YA1104NP),
+    np_friend   = recode_sus(R08_YA1105NP),
+
+    # Cigarettes
+    cig_curious  = recode_sus(R08_YC1103),
+    cig_nextyear = recode_sus(R08_YC1206),
+    cig_soon     = recode_sus(R08_YC1104),
+    cig_friend   = recode_sus(R08_YC1105),
+
+    # E-cigarettes / ENDS
+    ecig_curious  = recode_sus(R08_YV1103),
+    ecig_nextyear = recode_sus(R08_YV1206),
+    ecig_soon     = recode_sus(R08_YV1104),
+    ecig_friend   = recode_sus(R08_YV1105),
+
+    # Hookah
+    hookah_curious  = recode_sus(R08_YH1103),
+    hookah_nextyear = recode_sus(R08_YH1206),
+    hookah_soon     = recode_sus(R08_YH1104),
+    hookah_friend   = recode_sus(R08_YH1105),
+
+    # Snus
+    snus_curious  = recode_sus(R08_YU1103),
+    snus_nextyear = recode_sus(R08_YU1206),
+    snus_soon     = recode_sus(R08_YU1104),
+    snus_friend   = recode_sus(R08_YU1105),
+
+    # Smokeless tobacco
+    smkls_curious  = recode_sus(R08_YS1103),
+    smkls_nextyear = recode_sus(R08_YS1206),
+    smkls_soon     = recode_sus(R08_YS1104),
+    smkls_friend   = recode_sus(R08_YS1105),
+
+    # Traditional cigars
+    cigar_curious  = recode_sus(R08_YG9010),
+    cigar_nextyear = recode_sus(R08_YG9020),
+    cigar_soon     = recode_sus(R08_YG9013),
+    cigar_friend   = recode_sus(R08_YG9016),
+
+    # Cigarillos
+    cigarillo_curious  = recode_sus(R08_YG9011),
+    cigarillo_nextyear = recode_sus(R08_YG9021),
+    cigarillo_soon     = recode_sus(R08_YG9014),
+    cigarillo_friend   = recode_sus(R08_YG9017),
+
+    # Filtered cigars
+    fcigar_curious  = recode_sus(R08_YG9012),
+    fcigar_nextyear = recode_sus(R08_YG9022),
+    fcigar_soon     = recode_sus(R08_YG9015),
+    fcigar_friend   = recode_sus(R08_YG9018)
+  )
+
+# Harmonized PATH Young Adult susceptibility variables
+PATH_ya_sus <- ya %>%
+  dplyr::transmute(
+    source = "PATH",
+    dataset = "PATH young adult",
+    group = "Young adult",
+
+    # Nicotine pouches
+    np_curious  = recode_sus(R08_AA1103NP),
+    np_nextyear = recode_sus(R08_AA1206NP),
+    np_soon     = recode_sus(R08_AA1104NP),
+    np_friend   = recode_sus(R08_AA1105NP),
+
+    # Cigarettes
+    cig_curious  = recode_sus(R08_AC1103),
+    cig_nextyear = recode_sus(R08_AC1206),
+    cig_soon     = recode_sus(R08_AC1104),
+    cig_friend   = recode_sus(R08_AC1205),
+
+    # E-cigarettes / ENDS
+    ecig_curious  = recode_sus(R08_AV1103),
+    ecig_nextyear = recode_sus(R08_AV1206),
+    ecig_soon     = recode_sus(R08_AV1104),
+    ecig_friend   = recode_sus(R08_AV1105),
+
+    # Hookah
+    hookah_curious  = recode_sus(R08_AH1103),
+    hookah_nextyear = recode_sus(R08_AH1206),
+    hookah_soon     = recode_sus(R08_AH1104),
+    hookah_friend   = recode_sus(R08_AH1205),
+
+    # Snus
+    snus_curious  = recode_sus(R08_AU1103),
+    snus_nextyear = recode_sus(R08_AU1206),
+    snus_soon     = recode_sus(R08_AU1104),
+    snus_friend   = recode_sus(R08_AU1205),
+
+    # Smokeless tobacco
+    smkls_curious  = recode_sus(R08_AS1103),
+    smkls_nextyear = recode_sus(R08_AS1206),
+    smkls_soon     = recode_sus(R08_AS1104),
+    smkls_friend   = recode_sus(R08_AS1205),
+
+    # Traditional cigars
+    cigar_curious  = recode_sus(R08_AG9010),
+    cigar_nextyear = recode_sus(R08_AG9020),
+    cigar_soon     = recode_sus(R08_AG9013),
+    cigar_friend   = recode_sus(R08_AG9016),
+
+    # Cigarillos
+    cigarillo_curious  = recode_sus(R08_AG9011),
+    cigarillo_nextyear = recode_sus(R08_AG9021),
+    cigarillo_soon     = recode_sus(R08_AG9014),
+    cigarillo_friend   = recode_sus(R08_AG9017),
+
+    # Filtered cigars
+    fcigar_curious  = recode_sus(R08_AG9012),
+    fcigar_nextyear = recode_sus(R08_AG9022),
+    fcigar_soon     = recode_sus(R08_AG9015),
+    fcigar_friend   = recode_sus(R08_AG9018)
+  )
+
+# Combine PATH youth and young adult susceptibility data
+PATH_sus_wide <- dplyr::bind_rows(PATH_youth_sus, PATH_ya_sus)
+
+# Pouch-only analytic PATH dataset for earlier analyses
+np_all_analytic <- PATH_sus_wide %>%
+  dplyr::select(source, dataset, group, np_curious, np_nextyear, np_soon, np_friend) %>%
+  dplyr::filter(rowSums(!is.na(dplyr::select(., np_curious, np_nextyear, np_soon, np_friend))) > 0)
+
+# Check analytic sample size by group
+table(np_all_analytic$group)
+
+# Check distributions
+summary(np_all_analytic)
+```
+```{r PATH broad susceptibility data}
+# Product item sets
+product_items <- list(
+  np = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  cig = c("cig_curious", "cig_nextyear", "cig_soon", "cig_friend"),
+  ecig = c("ecig_curious", "ecig_nextyear", "ecig_soon", "ecig_friend"),
+  hookah = c("hookah_curious", "hookah_nextyear", "hookah_soon", "hookah_friend"),
+  snus = c("snus_curious", "snus_nextyear", "snus_soon", "snus_friend"),
+  smkls = c("smkls_curious", "smkls_nextyear", "smkls_soon", "smkls_friend"),
+  cigar = c("cigar_curious", "cigar_nextyear", "cigar_soon", "cigar_friend"),
+  cigarillo = c("cigarillo_curious", "cigarillo_nextyear", "cigarillo_soon", "cigarillo_friend"),
+  fcigar = c("fcigar_curious", "fcigar_nextyear", "fcigar_soon", "fcigar_friend")
+)
+
+# All broad susceptibility item names
+broad_sus_items <- unname(unlist(product_items))
+
+# Check that all items exist in PATH_sus_wide
+setdiff(broad_sus_items, names(PATH_sus_wide))
+
+# Create PATH-only broad susceptibility analytic dataset
+PATH_broad_sus <- PATH_sus_wide %>%
+  dplyr::select(
+    source,
+    dataset,
+    group,
+    dplyr::all_of(broad_sus_items)
+  )
+
+# Keep respondents with at least one susceptibility item answered
+PATH_broad_sus_analytic <- PATH_broad_sus %>%
+  dplyr::filter(
+    rowSums(!is.na(dplyr::select(., dplyr::all_of(broad_sus_items)))) > 0
+  )
+
+# Check sample
+table(PATH_broad_sus_analytic$dataset)
+summary(PATH_broad_sus_analytic[, broad_sus_items])
+```
+```{r Broad item descriptive ranges}
+# Reproducible item-level descriptives for Results reporting.
+# psych::describe() reports excess kurtosis (normal distribution = 0).
+broad_item_descriptives <- psych::describe(
+  PATH_broad_sus_analytic[, broad_sus_items],
+  fast = FALSE
+) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("item") %>%
+  dplyr::select(item, n, mean, sd, skew, kurtosis)
+
+broad_descriptive_ranges <- broad_item_descriptives %>%
+  dplyr::summarise(
+    mean_min = min(mean, na.rm = TRUE),
+    mean_max = max(mean, na.rm = TRUE),
+    sd_min = min(sd, na.rm = TRUE),
+    sd_max = max(sd, na.rm = TRUE),
+    skew_min = min(skew, na.rm = TRUE),
+    skew_max = max(skew, na.rm = TRUE),
+    kurtosis_min = min(kurtosis, na.rm = TRUE),
+    kurtosis_max = max(kurtosis, na.rm = TRUE)
+  ) %>%
+  dplyr::mutate(dplyr::across(dplyr::everything(), ~ round(.x, 2)))
+
+broad_item_descriptives
+broad_descriptive_ranges
+```
+
+#Recode IPSOS Youth
+```{r Recode}
+# Preserve raw IPSOS data
+IPSOS_Youth_raw <- IPSOS_Youth
+
+# Identify respondent ID column across IPSOS file versions
+ipsos_id_col <- dplyr::case_when(
+  "ResponseId" %in% names(IPSOS_Youth_raw) ~ "ResponseId",
+  "caseid2" %in% names(IPSOS_Youth_raw) ~ "caseid2",
+  TRUE ~ NA_character_
+)
+
+if (is.na(ipsos_id_col)) stop("No IPSOS respondent ID column found")
+
+# Sus recode function: 1 = lowest susceptibility, 4 = highest susceptibility
+recode_ipsos_sus <- function(x) {
+  x_clean <- stringr::str_to_lower(stringr::str_trim(as.character(x)))
+  
+  dplyr::case_when(
+    x_clean %in% c(".", "", "na", "nan") ~ NA_real_,
+    stringr::str_detect(x_clean, "definit") & stringr::str_detect(x_clean, "not") ~ 1,
+    stringr::str_detect(x_clean, "probably not") ~ 2,
+    stringr::str_detect(x_clean, "probably yes") ~ 3,
+    stringr::str_detect(x_clean, "definit") & stringr::str_detect(x_clean, "yes") ~ 4,
+    TRUE ~ NA_real_
+  )
+}
+
+# Create cleaned/re-coded IPSOS Youth object
+IPSOS_Youth <- IPSOS_Youth_raw %>%
+  dplyr::transmute(
+    id = .data[[ipsos_id_col]],
+    np_curious  = recode_ipsos_sus(NP13),
+    np_nextyear = recode_ipsos_sus(NP11),
+    np_soon     = recode_ipsos_sus(NP10),
+    np_friend   = recode_ipsos_sus(NP12),
+    source = "Ipsos youth",
+    group = "Youth"
+  )
+
+# Check cleaned object
+summary(IPSOS_Youth)
+table(IPSOS_Youth$np_curious, useNA = "ifany")
+table(IPSOS_Youth$np_nextyear, useNA = "ifany")
+table(IPSOS_Youth$np_soon, useNA = "ifany")
+table(IPSOS_Youth$np_friend, useNA = "ifany")
+
+# Keep only IPSOS respondents with at least one pouch susceptibility item
+IPSOS_Youth_analytic <- IPSOS_Youth[rowSums(!is.na(IPSOS_Youth[, c(
+  "np_curious",
+  "np_nextyear",
+  "np_soon",
+  "np_friend"
+)])) > 0, ]
+
+# Check analytic sample size
+dim(IPSOS_Youth_analytic)
+
+# Check distributions
+summary(IPSOS_Youth_analytic)
+
+```
+
+#Create Pooled Analytic Sample
+```{r Analytic sample}
+# PATH pouch-only analytic file
+PATH_np_analytic <- np_all_analytic %>%
+  dplyr::select(
+    np_curious, np_nextyear, np_soon, np_friend,
+    source, group, dataset
+  )
+
+# IPSOS pouch-only analytic file
+IPSOS_Youth_analytic <- IPSOS_Youth_analytic %>%
+  dplyr::mutate(
+    source = "Ipsos",
+    dataset = "Ipsos youth",
+    group = "Youth"
+  ) %>%
+  dplyr::select(
+    np_curious, np_nextyear, np_soon, np_friend,
+    source, group, dataset
+  )
+
+# Master pooled dataset
+np_master <- dplyr::bind_rows(PATH_np_analytic, IPSOS_Youth_analytic)
+
+# Remove objects from earlier workflow iterations
+rm(
+  da36498.8001,
+  da36498.8002,
+  IPSOS_Youth,
+  list = ls(pattern = "^youth_np$|^ya_np$|^youth_np_recoded$|^ya_np_recoded$")
+)
+```
+
+#Pouch Descriptives
+```{r Item-level descriptives}
+# Item means by dataset
+aggregate(
+  np_master[, c("np_curious", "np_nextyear", "np_soon", "np_friend")],
+  by = list(dataset = np_master$dataset),
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Item SDs by dataset
+aggregate(
+  np_master[, c("np_curious", "np_nextyear", "np_soon", "np_friend")],
+  by = list(dataset = np_master$dataset),
+  FUN = function(x) sd(x, na.rm = TRUE)
+)
+
+# Item means by source/group
+aggregate(
+  np_master[, c("np_curious", "np_nextyear", "np_soon", "np_friend")],
+  by = list(source = np_master$source, group = np_master$group),
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Response distributions by item and dataset
+table(np_master$dataset, np_master$np_curious, useNA = "ifany")
+table(np_master$dataset, np_master$np_nextyear, useNA = "ifany")
+table(np_master$dataset, np_master$np_soon, useNA = "ifany")
+table(np_master$dataset, np_master$np_friend, useNA = "ifany")
+
+
+```
+```{r Item-level correlations}
+# Item names
+np_items <- c("np_curious", "np_nextyear", "np_soon", "np_friend")
+
+# Spearman correlations overall
+cor(
+  np_master[, np_items],
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+# Spearman correlations by dataset
+cor(
+  np_master[np_master$dataset == "PATH youth", np_items],
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+cor(
+  np_master[np_master$dataset == "PATH young adult", np_items],
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+cor(
+  np_master[np_master$dataset == "Ipsos youth", np_items],
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+
+```
+```{r Reliability testing}
+# Item names
+np_item_names <- c("np_curious", "np_nextyear", "np_soon", "np_friend")
+
+# Create clean numeric item dataset for reliability analyses
+np_items <- np_master[, np_item_names]
+np_items <- as.data.frame(lapply(np_items, as.numeric))
+
+# Check structure
+str(np_items)
+
+# Overall alpha
+psych::alpha(np_items)
+
+# Alpha by dataset
+psych::alpha(np_items[np_master$dataset == "PATH youth", ])
+psych::alpha(np_items[np_master$dataset == "PATH young adult", ])
+psych::alpha(np_items[np_master$dataset == "Ipsos youth", ])
+
+# Overall omega
+psych::omega(np_items, nfactors = 1)
+```
+
+#Pouch-specific CFA
+```{r Pouch susceptibility CFA}
+# Define one-factor model
+np_model <- '
+  np_sus =~ np_curious + np_nextyear + np_soon + np_friend
+'
+
+# Fit ordered categorical CFA
+fit_np <- cfa(
+  model = np_model,
+  data = np_master,
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Model fit and standardized loadings
+summary(fit_np, fit.measures = TRUE, standardized = TRUE)
+
+
+```
+```{r CFA by dataset}
+# CFA among PATH youth
+fit_np_path_youth <- lavaan::cfa(
+  model = np_model,
+  data = np_master[np_master$dataset == "PATH youth", ],
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_np_path_youth, fit.measures = TRUE, standardized = TRUE)
+
+# CFA among PATH young adults
+fit_np_path_ya <- lavaan::cfa(
+  model = np_model,
+  data = np_master[np_master$dataset == "PATH young adult", ],
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_np_path_ya, fit.measures = TRUE, standardized = TRUE)
+
+# CFA among IPSOS youth
+fit_np_ipsos_youth <- lavaan::cfa(
+  model = np_model,
+  data = np_master[np_master$dataset == "Ipsos youth", ],
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_np_ipsos_youth, fit.measures = TRUE, standardized = TRUE)
+```
+```{r Measurement invariance across age groups}
+# Convert group to factor
+np_master$group <- factor(np_master$group)
+
+# Check group sizes
+table(np_master$group, np_master$dataset)
+
+# Configural invariance across age groups
+fit_config_age <- lavaan::cfa(
+  model = np_model,
+  data = np_master,
+  group = "group",
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Loadings + thresholds invariance for ordered items across age groups
+fit_thresh_age <- lavaan::cfa(
+  model = np_model,
+  data = np_master,
+  group = "group",
+  ordered = c("np_curious", "np_nextyear", "np_soon", "np_friend"),
+  estimator = "WLSMV",
+  missing = "pairwise",
+  group.equal = c("loadings", "thresholds")
+)
+
+# Compare fit
+summary(fit_config_age, fit.measures = TRUE, standardized = TRUE)
+summary(fit_thresh_age, fit.measures = TRUE, standardized = TRUE)
+
+# Scaled chi-square difference test
+lavaan::lavTestLRT(fit_config_age, fit_thresh_age)
+
+# Extract practical fit measures
+lavaan::fitMeasures(fit_config_age, c("cfi", "tli", "rmsea", "srmr"))
+lavaan::fitMeasures(fit_thresh_age, c("cfi", "tli", "rmsea", "srmr"))
+
+# Score test for equality constraints
+lavaan::lavTestScore(fit_thresh_age)
+```
+
+#General vs product-specific CFA
+```{r Product-specific CFA models}
+# Run one-factor CFA for each product-specific susceptibility scale
+product_cfa_results <- lapply(names(product_items), function(prod) {
+  
+  items <- product_items[[prod]]
+  
+  model_text <- paste0(
+    prod, "_sus =~ ",
+    paste(items, collapse = " + ")
+  )
+  
+  fit <- lavaan::cfa(
+    model = model_text,
+    data = PATH_broad_sus_analytic,
+    ordered = items,
+    estimator = "WLSMV",
+    missing = "pairwise"
+  )
+  
+  list(
+    product = prod,
+    fit = fit,
+    fit_measures = lavaan::fitMeasures(fit, c("cfi", "tli", "rmsea", "srmr"))
+  )
+})
+
+# View fit measures
+product_cfa_table <- dplyr::bind_rows(lapply(product_cfa_results, function(x) {
+  data.frame(
+    product = x$product,
+    t(as.numeric(x$fit_measures))
+  )
+}))
+
+names(product_cfa_table) <- c("product", "cfi", "tli", "rmsea", "srmr")
+
+product_cfa_table
+```
+```{r One-factor CFA model}
+# Single-factor model: all 36 ordered susceptibility items load on one factor
+one_factor_model <- paste0(
+  "general_sus =~ ",
+  paste(broad_sus_items, collapse = " + ")
+)
+
+fit_one_factor <- lavaan::cfa(
+  model = one_factor_model,
+  data = PATH_broad_sus_analytic,
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_one_factor, fit.measures = TRUE, standardized = TRUE)
+
+# Statistics reported in Table 2
+one_factor_fit <- lavaan::fitMeasures(
+  fit_one_factor,
+  c("chisq.scaled", "df.scaled", "pvalue.scaled",
+    "rmsea", "rmsea.ci.lower", "rmsea.ci.upper",
+    "srmr", "cfi", "tli")
+)
+one_factor_fit
+```
+```{r Correlated product-specific model}
+# Correlated product-specific factor model
+product_factor_model <- '
+  np_sus =~ np_curious + np_nextyear + np_soon + np_friend
+  cig_sus =~ cig_curious + cig_nextyear + cig_soon + cig_friend
+  ecig_sus =~ ecig_curious + ecig_nextyear + ecig_soon + ecig_friend
+  hookah_sus =~ hookah_curious + hookah_nextyear + hookah_soon + hookah_friend
+  snus_sus =~ snus_curious + snus_nextyear + snus_soon + snus_friend
+  smkls_sus =~ smkls_curious + smkls_nextyear + smkls_soon + smkls_friend
+  cigar_sus =~ cigar_curious + cigar_nextyear + cigar_soon + cigar_friend
+  cigarillo_sus =~ cigarillo_curious + cigarillo_nextyear + cigarillo_soon + cigarillo_friend
+  fcigar_sus =~ fcigar_curious + fcigar_nextyear + fcigar_soon + fcigar_friend
+'
+
+fit_product_factors <- lavaan::cfa(
+  model = product_factor_model,
+  data = PATH_broad_sus_analytic,
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_product_factors, fit.measures = TRUE, standardized = TRUE)
+
+# Fit measures
+lavaan::fitMeasures(
+  fit_product_factors,
+  c("cfi", "tli", "rmsea", "srmr")
+)
+```
+```{r Product factor correlations}
+# Extract standardized latent factor correlations
+std_product <- lavaan::standardizedSolution(fit_product_factors)
+
+product_factor_correlations <- std_product %>%
+  dplyr::filter(op == "~~", lhs != rhs) %>%
+  dplyr::select(lhs, rhs, est.std, pvalue) %>%
+  dplyr::arrange(dplyr::desc(est.std))
+
+product_factor_correlations
+
+# Specifically inspect correlations involving nicotine pouch susceptibility
+pouch_factor_correlations <- product_factor_correlations %>%
+  dplyr::filter(lhs == "np_sus" | rhs == "np_sus") %>%
+  dplyr::arrange(dplyr::desc(est.std))
+
+pouch_factor_correlations
+```
+```{r Second-order general model}
+general_factor_model <- '
+  np_sus =~ np_curious + np_nextyear + np_soon + np_friend
+  cig_sus =~ cig_curious + cig_nextyear + cig_soon + cig_friend
+  ecig_sus =~ ecig_curious + ecig_nextyear + ecig_soon + ecig_friend
+  hookah_sus =~ hookah_curious + hookah_nextyear + hookah_soon + hookah_friend
+  snus_sus =~ snus_curious + snus_nextyear + snus_soon + snus_friend
+  smkls_sus =~ smkls_curious + smkls_nextyear + smkls_soon + smkls_friend
+  cigar_sus =~ cigar_curious + cigar_nextyear + cigar_soon + cigar_friend
+  cigarillo_sus =~ cigarillo_curious + cigarillo_nextyear + cigarillo_soon + cigarillo_friend
+  fcigar_sus =~ fcigar_curious + fcigar_nextyear + fcigar_soon + fcigar_friend
+
+  general_sus =~ np_sus + cig_sus + ecig_sus + hookah_sus +
+                 snus_sus + smkls_sus + cigar_sus + cigarillo_sus + fcigar_sus
+'
+
+fit_general_factor <- lavaan::cfa(
+  model = general_factor_model,
+  data = PATH_broad_sus_analytic,
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_general_factor, fit.measures = TRUE, standardized = TRUE)
+
+lavaan::fitMeasures(
+  fit_general_factor,
+  c("cfi", "tli", "rmsea", "srmr"))
+```
+```{r Bifactor model}
+bifactor_model <- '
+  # General susceptibility factor
+  general_sus =~ np_curious + np_nextyear + np_soon + np_friend +
+                 cig_curious + cig_nextyear + cig_soon + cig_friend +
+                 ecig_curious + ecig_nextyear + ecig_soon + ecig_friend +
+                 hookah_curious + hookah_nextyear + hookah_soon + hookah_friend +
+                 smkls_curious + smkls_nextyear + smkls_soon + smkls_friend +
+                 snus_curious + snus_nextyear + snus_soon + snus_friend +
+                 cigar_curious + cigar_nextyear + cigar_soon + cigar_friend +
+                 cigarillo_curious + cigarillo_nextyear + cigarillo_soon + cigarillo_friend +
+                 fcigar_curious + fcigar_nextyear + fcigar_soon + fcigar_friend
+
+  # Product-specific residual factors
+  np_specific =~ np_curious + np_nextyear + np_soon + np_friend
+  cig_specific =~ cig_curious + cig_nextyear + cig_soon + cig_friend
+  ecig_specific =~ ecig_curious + ecig_nextyear + ecig_soon + ecig_friend
+  hookah_specific =~ hookah_curious + hookah_nextyear + hookah_soon + hookah_friend
+  smkls_specific =~ smkls_curious + smkls_nextyear + smkls_soon + smkls_friend
+  snus_specific =~ snus_curious + snus_nextyear + snus_soon + snus_friend
+  cigar_specific =~ cigar_curious + cigar_nextyear + cigar_soon + cigar_friend
+  cigarillo_specific =~ cigarillo_curious + cigarillo_nextyear + cigarillo_soon + cigarillo_friend
+  fcigar_specific =~ fcigar_curious + fcigar_nextyear + fcigar_soon + fcigar_friend
+
+  # Orthogonal factors
+  general_sus ~~ 0*np_specific + 0*cig_specific + 0*ecig_specific +
+                 0*hookah_specific + 0*smkls_specific + 0*snus_specific +
+                 0*cigar_specific + 0*cigarillo_specific + 0*fcigar_specific
+
+  np_specific ~~ 0*cig_specific + 0*ecig_specific + 0*hookah_specific +
+                 0*smkls_specific + 0*snus_specific + 0*cigar_specific +
+                 0*cigarillo_specific + 0*fcigar_specific
+
+  cig_specific ~~ 0*ecig_specific + 0*hookah_specific + 0*smkls_specific +
+                  0*snus_specific + 0*cigar_specific + 0*cigarillo_specific +
+                  0*fcigar_specific
+
+  ecig_specific ~~ 0*hookah_specific + 0*smkls_specific + 0*snus_specific +
+                   0*cigar_specific + 0*cigarillo_specific + 0*fcigar_specific
+
+  hookah_specific ~~ 0*smkls_specific + 0*snus_specific + 0*cigar_specific +
+                     0*cigarillo_specific + 0*fcigar_specific
+
+  smkls_specific ~~ 0*snus_specific + 0*cigar_specific +
+                    0*cigarillo_specific + 0*fcigar_specific
+
+  snus_specific ~~ 0*cigar_specific + 0*cigarillo_specific + 0*fcigar_specific
+
+  cigar_specific ~~ 0*cigarillo_specific + 0*fcigar_specific
+
+  cigarillo_specific ~~ 0*fcigar_specific
+'
+
+fit_bifactor <- lavaan::cfa(
+  model = bifactor_model,
+  data = PATH_broad_sus_analytic,
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_bifactor, fit.measures = TRUE, standardized = TRUE)
+
+lavaan::fitMeasures(
+  fit_bifactor,
+  c("cfi", "tli", "rmsea", "srmr")
+)
+```
+```{r Visual}
+fit_df <- tibble::tribble(
+  ~index, ~value, ~direction, ~good_cut, ~excellent_cut, ~label,
+  "CFI",   .994, "higher", .95, .97, ".994",
+  "TLI",   .993, "higher", .95, .97, ".993",
+  "RMSEA", .050, "lower",  .08, .05, ".050",
+  "SRMR",  .080, "lower",  .08, .05, ".080"
+)
+
+fit_df <- fit_df %>%
+  mutate(
+    status = case_when(
+      direction == "higher" & value >= excellent_cut ~ "Excellent",
+      direction == "higher" & value >= good_cut ~ "Good",
+      direction == "lower" & value <= excellent_cut ~ "Excellent",
+      direction == "lower" & value <= good_cut ~ "Good",
+      TRUE ~ "Needs caution"
+    ),
+    index = factor(index, levels = rev(c("CFI", "TLI", "RMSEA", "SRMR")))
+  )
+
+ggplot(fit_df, aes(x = 1, y = index)) +
+  geom_tile(aes(fill = status), width = .85, height = .7, color = "white") +
+  geom_text(aes(label = paste0(index, " = ", label)), 
+            size = 7, fontface = "bold", color = "black") +
+  scale_fill_manual(
+    values = c(
+      "Excellent" = "#d9ead3",
+      "Good" = "#fff2cc",
+      "Needs caution" = "#f4cccc"
+    )
+  ) +
+  labs(
+    title = "Higher-order CFA model fit",
+    subtitle = "The susceptibility measurement architecture fit the data well",
+    fill = NULL
+  ) +
+  theme_void(base_size = 18) +
+  theme(
+    plot.title = element_text(face = "bold", size = 24),
+    plot.subtitle = element_text(size = 16),
+    legend.position = "bottom",
+    plot.margin = margin(10, 20, 10, 20)
+  )
+```
+
+#Measurement invariance
+```{r Measurement invariance, eval=FALSE, purl=FALSE}
+# Ensure group is a factor
+PATH_broad_sus_analytic$group <- factor(PATH_broad_sus_analytic$group)
+
+# Configural invariance: same factor structure across groups
+fit_general_config <- lavaan::cfa(
+  model = general_factor_model,
+  data = PATH_broad_sus_analytic,
+  group = "group",
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Threshold/loading invariance for ordered categorical items
+fit_general_thresh <- lavaan::cfa(
+  model = general_factor_model,
+  data = PATH_broad_sus_analytic,
+  group = "group",
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise",
+  group.equal = c("loadings", "thresholds")
+)
+
+# Compare model fit
+general_invariance_fit <- dplyr::bind_rows(
+  data.frame(
+    model = "Configural",
+    t(lavaan::fitMeasures(
+      fit_general_config,
+      c("cfi", "tli", "rmsea", "srmr")
+    ))
+  ),
+  data.frame(
+    model = "Loadings + thresholds",
+    t(lavaan::fitMeasures(
+      fit_general_thresh,
+      c("cfi", "tli", "rmsea", "srmr")
+    ))
+  )
+)
+
+general_invariance_fit <- general_invariance_fit %>%
+  dplyr::mutate(
+    dplyr::across(c(cfi, tli, rmsea, srmr), ~ round(.x, 3))
+  )
+
+general_invariance_fit
+
+# Practical change in fit
+general_invariance_delta <- general_invariance_fit %>%
+  dplyr::summarise(
+    delta_cfi = cfi[model == "Loadings + thresholds"] - cfi[model == "Configural"],
+    delta_tli = tli[model == "Loadings + thresholds"] - tli[model == "Configural"],
+    delta_rmsea = rmsea[model == "Loadings + thresholds"] - rmsea[model == "Configural"],
+    delta_srmr = srmr[model == "Loadings + thresholds"] - srmr[model == "Configural"]
+  )
+
+general_invariance_delta
+
+# Chi-square difference test - expected to be sensitive with this sample size
+lavaan::lavTestLRT(fit_general_config, fit_general_thresh)
+```
+```{r Full-scale invariance recode sparse categories}
+PATH_broad_inv <- PATH_broad_sus_analytic
+
+PATH_broad_inv[broad_sus_items] <- lapply(
+  PATH_broad_inv[broad_sus_items],
+  function(x) {
+    x_num <- as.numeric(x)
+
+    dplyr::case_when(
+      is.na(x_num) ~ NA_real_,
+      x_num == 1 ~ 1,
+      x_num == 2 ~ 2,
+      x_num %in% c(3, 4) ~ 3
+    )
+  }
+)
+
+# Quick check for empty categories by group
+empty_category_check <- lapply(broad_sus_items, function(v) {
+  tab <- table(PATH_broad_inv$group, PATH_broad_inv[[v]], useNA = "no")
+  data.frame(
+    item = v,
+    has_empty_category = any(tab == 0)
+  )
+}) %>%
+  dplyr::bind_rows()
+
+empty_category_check %>%
+  dplyr::filter(has_empty_category)
+```
+```{r Full-scale measurement invariance collapsed}
+PATH_broad_inv$group <- factor(PATH_broad_inv$group)
+
+fit_general_config_collapsed <- lavaan::cfa(
+  model = general_factor_model,
+  data = PATH_broad_inv,
+  group = "group",
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+fit_general_thresh_collapsed <- lavaan::cfa(
+  model = general_factor_model,
+  data = PATH_broad_inv,
+  group = "group",
+  ordered = broad_sus_items,
+  estimator = "WLSMV",
+  missing = "pairwise",
+  group.equal = c("loadings", "thresholds")
+)
+
+# Helper to extract fit measures as a clean one-row data frame
+get_lavaan_fit <- function(fit, model_name) {
+  fit_values <- lavaan::fitMeasures(
+    fit,
+    c("cfi", "tli", "rmsea", "srmr")
+  )
+
+  data.frame(
+    model = model_name,
+    cfi = as.numeric(fit_values["cfi"]),
+    tli = as.numeric(fit_values["tli"]),
+    rmsea = as.numeric(fit_values["rmsea"]),
+    srmr = as.numeric(fit_values["srmr"])
+  )
+}
+
+general_invariance_fit_collapsed <- dplyr::bind_rows(
+  get_lavaan_fit(fit_general_config_collapsed, "Configural"),
+  get_lavaan_fit(fit_general_thresh_collapsed, "Loadings + thresholds")
+) %>%
+  dplyr::mutate(
+    dplyr::across(c(cfi, tli, rmsea, srmr), ~ round(.x, 3))
+  )
+
+general_invariance_fit_collapsed
+
+general_invariance_delta_collapsed <- general_invariance_fit_collapsed %>%
+  dplyr::summarise(
+    delta_cfi = cfi[model == "Loadings + thresholds"] - cfi[model == "Configural"],
+    delta_tli = tli[model == "Loadings + thresholds"] - tli[model == "Configural"],
+    delta_rmsea = rmsea[model == "Loadings + thresholds"] - rmsea[model == "Configural"],
+    delta_srmr = srmr[model == "Loadings + thresholds"] - srmr[model == "Configural"]
+  )
+
+general_invariance_delta_collapsed
+```
+```{r Full-scale measurement invariance collapsed fit table}
+# Helper to extract fit measures as a clean one-row data frame
+get_lavaan_fit <- function(fit, model_name) {
+  fit_values <- lavaan::fitMeasures(
+    fit,
+    c("cfi", "tli", "rmsea", "srmr")
+  )
+
+  data.frame(
+    model = model_name,
+    cfi = as.numeric(fit_values["cfi"]),
+    tli = as.numeric(fit_values["tli"]),
+    rmsea = as.numeric(fit_values["rmsea"]),
+    srmr = as.numeric(fit_values["srmr"])
+  )
+}
+
+general_invariance_fit_collapsed <- dplyr::bind_rows(
+  get_lavaan_fit(fit_general_config_collapsed, "Configural"),
+  get_lavaan_fit(fit_general_thresh_collapsed, "Loadings + thresholds")
+) %>%
+  dplyr::mutate(
+    dplyr::across(c(cfi, tli, rmsea, srmr), ~ round(.x, 3))
+  )
+
+general_invariance_fit_collapsed
+
+general_invariance_delta_collapsed <- general_invariance_fit_collapsed %>%
+  dplyr::summarise(
+    delta_cfi = cfi[model == "Loadings + thresholds"] - cfi[model == "Configural"],
+    delta_tli = tli[model == "Loadings + thresholds"] - tli[model == "Configural"],
+    delta_rmsea = rmsea[model == "Loadings + thresholds"] - rmsea[model == "Configural"],
+    delta_srmr = srmr[model == "Loadings + thresholds"] - srmr[model == "Configural"]
+  )
+
+general_invariance_delta_collapsed
+```
+
+#Pouch-specific IRT
+```{r Pouch IRT data}
+# Item names
+np_item_names <- c("np_curious", "np_nextyear", "np_soon", "np_friend")
+
+# Create IRT dataset from pooled master sample
+NP_IRT <- np_master %>%
+  dplyr::select(dplyr::all_of(np_item_names)) %>%
+  dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric))
+
+# Apply listwise deletion for IRT analyses
+NP_IRT <- NP_IRT[complete.cases(NP_IRT), ]
+
+# Check final IRT sample
+summary(NP_IRT)
+dim(NP_IRT)
+
+
+```
+```{r Mokken scale analysis}
+# Mokken nonparametric IRT
+NP_IRT_mokken <- NP_IRT %>%
+  mutate(across(everything(), as.numeric)) %>%
+  as.data.frame()
+
+# Scalability
+coefH(NP_IRT_mokken)
+
+# Monotonicity
+NP_monotonicity <- check.monotonicity(NP_IRT_mokken)
+summary(NP_monotonicity)
+plot(NP_monotonicity)
+
+# Reliability
+check.reliability(NP_IRT_mokken)
+```
+```{r Graded response model}
+# Fit 1-factor graded response model
+fit_NP_grm <- mirt(
+  data = NP_IRT,
+  model = 1,
+  itemtype = "graded",
+  technical = list(removeEmptyRows = TRUE),
+  SE = TRUE
+)
+
+summary(fit_NP_grm)
+```
+```{r Item parameters}
+# IRT parameters
+NP_coef <- coef(fit_NP_grm, IRTpars = TRUE, simplify = TRUE)
+
+# Global fit
+NP_M2 <- tryCatch(
+  mirt::M2(fit_NP_grm, type = "M2*"),
+  error = function(e) data.frame(note = conditionMessage(e))
+)
+NP_M2
+
+# Residual correlation matrix for local dependence
+resid_results <- residuals(fit_NP_grm, type = "Q3")
+resid_results
+```
+```{r Item parameters table}
+# Convert GRM item parameters to data frame
+grm_params <- as.data.frame(NP_coef$items) %>%
+  tibble::rownames_to_column(var = "Variable")
+
+# Item labels in harmonized order
+np_labels <- c(
+  "Curious about using nicotine pouches",
+  "Use nicotine pouches in the next year",
+  "Try nicotine pouches soon",
+  "Use nicotine pouches if best friend offered"
+)
+
+# Build clean GRM item parameter table
+table2_grm <- grm_params %>%
+  dplyr::mutate(
+    Item_ID = c("NP_Curious", "NP_NextYear", "NP_Soon", "NP_Friend"),
+    Item = paste0(np_labels, " (", Item_ID, ")")
+  ) %>%
+  dplyr::select(Item, a, b1, b2, b3) %>%
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 2)))
+
+# View table
+table2_grm
+
+# Export table
+write.csv(table2_grm, "Table2_GRM_item_parameters_NP.csv", row.names = FALSE)
+
+
+
+
+```
+```{r Option and item characeristic curves}
+plot(fit_NP_grm, type = "trace", facet_items = TRUE)
+plot(fit_NP_grm, type = "infotrace", facet_items = TRUE)
+
+```
+```{r Test information function}
+theta_grid <- seq(-3, 3, length.out = 500)
+
+test_info <- mirt::testinfo(
+  fit_NP_grm,
+  Theta = matrix(theta_grid, ncol = 1)
+)
+
+test_se <- 1 / sqrt(test_info)
+
+NP_info_se_df <- data.frame(
+  theta = theta_grid,
+  test_info = test_info,
+  se = test_se
+)
+
+# Scale SE to information range for plotting
+scale_factor <- max(NP_info_se_df$test_info, na.rm = TRUE) /
+  max(NP_info_se_df$se, na.rm = TRUE)
+
+ggplot(NP_info_se_df, aes(x = theta)) +
+  geom_line(aes(y = test_info, color = "Test Information"), linewidth = 1.2) +
+  geom_line(aes(y = se * scale_factor, color = "Standard Error"),
+            linewidth = 1.2, linetype = "dashed") +
+  scale_y_continuous(
+    name = "Test Information",
+    sec.axis = sec_axis(~ . / scale_factor, name = "Standard Error")
+  ) +
+  scale_color_manual(
+    values = c("Test Information" = "black", "Standard Error" = "gray40")
+  ) +
+  theme_bw() +
+  labs(
+    x = expression(theta),
+    color = NULL,
+    title = "Test Information and Standard Error"
+  )
+```
+```{r Conditional reliability}
+marginal_rxx(fit_NP_grm)
+
+theta_grid <- seq(-3, 3, length.out = 500)
+
+test_info <- mirt::testinfo(
+  fit_NP_grm,
+  Theta = matrix(theta_grid, ncol = 1)
+)
+
+cond_rel <- test_info / (test_info + 1)
+
+plot(
+  theta_grid,
+  cond_rel,
+  type = "l",
+  lwd = 3,
+  col = "blue",
+  ylim = c(0, 1),
+  xlab = expression(theta),
+  ylab = "Conditional Reliability",
+  main = "Conditional Reliability Curve"
+)
+
+abline(h = c(.70, .80, .90), lty = 2, col = "gray")
+```
+```{r Item information curves}
+# Item information curves
+item_info_list <- lapply(seq_along(np_item_names), function(i) {
+  data.frame(
+    theta = as.vector(theta_grid),
+    info  = mirt::iteminfo(mirt::extract.item(fit_NP_grm, i), Theta = theta_grid),
+    item  = np_item_names[i]
+  )
+})
+
+item_info_df <- dplyr::bind_rows(item_info_list)
+
+ggplot(item_info_df, aes(x = theta, y = info)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ item, scales = "free_y") +
+  labs(
+    title = "Item Information Curves",
+    x = expression(theta),
+    y = "Item Information"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+```
+```{r Differential item functioning}
+# Create complete-case dataset for IRT DIF
+NP_DIF <- np_master %>%
+  dplyr::select(group, dplyr::all_of(np_item_names)) %>%
+  dplyr::mutate(
+    group = factor(group),
+    dplyr::across(dplyr::all_of(np_item_names), as.numeric)
+  ) %>%
+  tidyr::drop_na(dplyr::all_of(np_item_names), group)
+
+# Check group sizes
+table(NP_DIF$group)
+
+# Item matrix and group vector
+NP_DIF_items <- NP_DIF %>%
+  dplyr::select(dplyr::all_of(np_item_names))
+
+NP_DIF_group <- NP_DIF$group
+
+# Multiple-group graded response model
+fit_NP_mg <- mirt::multipleGroup(
+  data = NP_DIF_items,
+  model = 1,
+  group = NP_DIF_group,
+  itemtype = "graded",
+  invariance = c("slopes", "intercepts", "free_means", "free_var")
+)
+
+summary(fit_NP_mg)
+
+DIF_NP_age <- mirt::DIF(
+  fit_NP_mg,
+  which.par = c("a1", "d1", "d2", "d3"),
+  scheme = "drop",
+  items2test = 1:length(np_item_names),
+  p.adjust = "BH"
+)
+
+DIF_NP_age
+
+# Fit less-constrained multiple-group model for inspecting group-specific item parameters
+# Anchor first item only to identify the scale
+fit_NP_mg_free <- mirt::multipleGroup(
+  data = NP_DIF_items,
+  model = 1,
+  group = NP_DIF_group,
+  itemtype = "graded",
+  invariance = c("np_curious", "free_means", "free_var")
+)
+
+summary(fit_NP_mg_free)
+
+# Extract group-specific IRT parameters
+coef_mg_free <- mirt::coef(fit_NP_mg_free, IRTpars = TRUE, simplify = TRUE)
+
+coef_mg_free$Youth$items
+coef_mg_free$`Young adult`$items
+
+```
+
+#Product-specific IRT
+```{r Product comparator IRT setup}
+# Product labels for cleaner tables
+product_labels <- c(
+  np = "Nicotine pouches",
+  cig = "Cigarettes",
+  ecig = "E-cigarettes",
+  hookah = "Hookah",
+  snus = "Snus",
+  smkls = "Smokeless tobacco",
+  cigar = "Traditional cigars",
+  cigarillo = "Cigarillos",
+  fcigar = "Filtered cigars"
+)
+
+# Item labels shared across product-specific susceptibility scales
+sus_item_labels <- c(
+  curious = "Curious",
+  nextyear = "Use in next year",
+  soon = "Try soon",
+  friend = "Best friend offered"
+)
+```
+```{r Product comparator IRT product universe}
+# Product universe for comparator IRT analyses
+product_items_main <- product_items[c(
+  "np",
+  "cig",
+  "ecig",
+  "hookah",
+  "smkls",
+  "snus",
+  "cigar",
+  "cigarillo",
+  "fcigar"
+)]
+
+broad_sus_items_main <- unname(unlist(product_items_main))
+
+# Check that all selected variables exist
+setdiff(broad_sus_items_main, names(PATH_broad_sus_analytic))
+```
+```{r Product comparator Mokken}
+product_mokken_results <- lapply(names(product_items_main), function(prod) {
+  
+  items <- product_items_main[[prod]]
+  
+  dat <- PATH_broad_sus_analytic %>%
+    dplyr::select(dplyr::all_of(items)) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric)) %>%
+    tidyr::drop_na()
+  
+  if (nrow(dat) < 100) return(NULL)
+  
+  h <- mokken::coefH(dat)
+  
+  data.frame(
+    product = prod,
+    product_label = product_labels[prod],
+    n = nrow(dat),
+    scale_H = as.numeric(h$H[1]),
+    stringsAsFactors = FALSE
+  )
+})
+
+product_mokken_table <- dplyr::bind_rows(product_mokken_results) %>%
+  dplyr::mutate(scale_H = round(scale_H, 3))
+
+product_mokken_table
+```
+```{r Product comparator GRM}
+fit_product_grm <- lapply(names(product_items_main), function(prod) {
+  
+  items <- product_items_main[[prod]]
+  
+  dat <- PATH_broad_sus_analytic %>%
+    dplyr::select(dplyr::all_of(items)) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric)) %>%
+    tidyr::drop_na()
+  
+  if (nrow(dat) < 100) return(NULL)
+  
+  fit <- mirt::mirt(
+    data = dat,
+    model = 1,
+    itemtype = "graded",
+    verbose = FALSE
+  )
+  
+  list(
+    product = prod,
+    product_label = unname(product_labels[prod]),
+    n = nrow(dat),
+    fit = fit
+  )
+})
+
+names(fit_product_grm) <- names(product_items_main)
+fit_product_grm <- fit_product_grm[!sapply(fit_product_grm, is.null)]
+```
+```{r Product comparator item parameters}
+# Extract GRM item parameters for each product
+product_grm_params <- lapply(fit_product_grm, function(x) {
+  
+  params <- mirt::coef(
+    x$fit,
+    IRTpars = TRUE,
+    simplify = TRUE
+  )$items %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("item_name")
+  
+  params %>%
+    dplyr::mutate(
+      product = x$product,
+      product_label = x$product_label,
+      n = x$n,
+      item_type = dplyr::case_when(
+        stringr::str_detect(item_name, "curious") ~ "Curious",
+        stringr::str_detect(item_name, "nextyear") ~ "Use in next year",
+        stringr::str_detect(item_name, "soon") ~ "Try soon",
+        stringr::str_detect(item_name, "friend") ~ "Best friend offered",
+        TRUE ~ item_name
+      )
+    ) %>%
+    dplyr::select(
+      product,
+      product_label,
+      n,
+      item_name,
+      item_type,
+      a,
+      b1,
+      b2,
+      b3
+    )
+})
+
+product_grm_param_table <- dplyr::bind_rows(product_grm_params) %>%
+  dplyr::mutate(
+    dplyr::across(c(a, b1, b2, b3), ~ round(.x, 2))
+  )
+
+product_grm_param_table
+```
+
+#IRT visuals
+```{r Product IRT reporting tables}
+# Order item types for clean tables/figures
+item_type_order <- c(
+  "Curious",
+  "Use in next year",
+  "Try soon",
+  "Best friend offered"
+)
+
+# Clean GRM parameter table
+product_grm_report_table <- product_grm_param_table %>%
+  dplyr::mutate(
+    item_type = factor(item_type, levels = item_type_order),
+    product_label = factor(product_label, levels = unique(product_label))
+  ) %>%
+  dplyr::arrange(product_label, item_type) %>%
+  dplyr::select(
+    product_label,
+    n,
+    item_type,
+    a,
+    b1,
+    b2,
+    b3
+  )
+
+product_grm_report_table
+
+# Most and second-most discriminating item by product
+product_discrimination_rank <- product_grm_param_table %>%
+  dplyr::group_by(product, product_label) %>%
+  dplyr::arrange(dplyr::desc(a), .by_group = TRUE) %>%
+  dplyr::mutate(rank = dplyr::row_number()) %>%
+  dplyr::ungroup()
+
+top_discrimination_table <- product_discrimination_rank %>%
+  dplyr::filter(rank <= 2) %>%
+  dplyr::select(product_label, rank, item_type, a) %>%
+  tidyr::pivot_wider(
+    names_from = rank,
+    values_from = c(item_type, a),
+    names_glue = "rank_{rank}_{.value}"
+  ) %>%
+  dplyr::rename(
+    most_discriminating_item = rank_1_item_type,
+    most_discriminating_a = rank_1_a,
+    second_discriminating_item = rank_2_item_type,
+    second_discriminating_a = rank_2_a
+  ) %>%
+  dplyr::mutate(
+    most_discriminating_a = round(most_discriminating_a, 2),
+    second_discriminating_a = round(second_discriminating_a, 2)
+  )
+
+top_discrimination_table
+
+# Quick check: which item wins by product?
+table(top_discrimination_table$most_discriminating_item)
+```
+```{r Product IRT discrimination heatmap}
+item_type_order <- c(
+  "Curious",
+  "Best friend offered",
+  "Try soon",
+  "Use in next year"
+)
+
+# Order products by discrimination for "Use in next year"
+product_order_nextyear <- product_grm_param_table %>%
+  dplyr::filter(item_type == "Use in next year") %>%
+  dplyr::arrange(dplyr::desc(a)) %>%
+  dplyr::pull(product_label)
+
+product_grm_param_table %>%
+  dplyr::mutate(
+    item_type = factor(item_type, levels = item_type_order),
+    product_label = factor(product_label, levels = rev(product_order_nextyear))
+  ) %>%
+  ggplot2::ggplot(
+    ggplot2::aes(
+      x = item_type,
+      y = product_label,
+      fill = a
+    )
+  ) +
+  ggplot2::geom_tile(color = "white", linewidth = 0.6) +
+  ggplot2::geom_text(
+    ggplot2::aes(label = round(a, 2)),
+    size = 3.5
+  ) +
+  ggplot2::scale_fill_gradient(
+    low = "white",
+    high = "steelblue",
+    name = "Discrimination\n(a)"
+  ) +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::theme(
+    axis.title = ggplot2::element_blank(),
+    panel.grid = ggplot2::element_blank(),
+    legend.position = "right"
+  ) +
+  ggplot2::labs(
+    title = "IRT Discrimination Parameters by Product and Item"
+  )
+```
+```{r General susceptibility IRT information}
+# Create item matrix for broad/general susceptibility IRT
+general_irt_items <- PATH_broad_sus_analytic %>%
+  dplyr::select(dplyr::all_of(broad_sus_items)) %>%
+  dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric))
+
+# Keep rows with at least one susceptibility item answered
+general_irt_items <- general_irt_items[
+  rowSums(!is.na(general_irt_items)) > 0,
+]
+
+# Fit one-factor GRM across entire product universe
+fit_general_grm <- mirt::mirt(
+  data = general_irt_items,
+  model = 1,
+  itemtype = "graded",
+  verbose = TRUE
+)
+
+summary(fit_general_grm)
+
+# Test information and standard error
+theta_grid <- seq(-3, 4, by = 0.05)
+
+general_test_info <- mirt::testinfo(
+  fit_general_grm,
+  Theta = matrix(theta_grid)
+)
+
+general_test_se <- 1 / sqrt(general_test_info)
+
+general_info_df <- data.frame(
+  theta = theta_grid,
+  test_info = general_test_info,
+  se = general_test_se
+)
+
+# Plot test information and SE together
+scale_factor <- max(general_info_df$test_info, na.rm = TRUE) /
+  max(general_info_df$se, na.rm = TRUE)
+
+ggplot2::ggplot(general_info_df, ggplot2::aes(x = theta)) +
+  ggplot2::geom_line(
+    ggplot2::aes(y = test_info, linetype = "Test information"),
+    linewidth = 1.1,
+    color = "black"
+  ) +
+  ggplot2::geom_line(
+    ggplot2::aes(y = se * scale_factor, linetype = "Standard error"),
+    linewidth = 1.1,
+    color = "gray40"
+  ) +
+  ggplot2::scale_y_continuous(
+    name = "Test Information",
+    sec.axis = ggplot2::sec_axis(
+      ~ . / scale_factor,
+      name = "Standard Error"
+    )
+  ) +
+  ggplot2::scale_linetype_manual(
+    values = c(
+      "Test information" = "solid",
+      "Standard error" = "dashed"
+    ),
+    name = NULL
+  ) +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::theme(
+    legend.position = "right"
+  ) +
+  ggplot2::labs(
+    title = "General Tobacco Susceptibility Test Information",
+    x = expression(theta)
+  )
+```
+```{r General susceptibility conditional reliability}
+general_cond_rel <- general_test_info / (general_test_info + 1)
+
+general_rel_df <- data.frame(
+  theta = theta_grid,
+  conditional_reliability = general_cond_rel
+)
+
+ggplot2::ggplot(
+  general_rel_df,
+  ggplot2::aes(x = theta, y = conditional_reliability)
+) +
+  ggplot2::geom_line(linewidth = 1.1, color = "black") +
+  ggplot2::geom_hline(
+    yintercept = c(.70, .80, .90),
+    linetype = "dashed",
+    color = "gray70"
+  ) +
+  ggplot2::coord_cartesian(ylim = c(0, 1)) +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::labs(
+    title = "Conditional Reliability for General Tobacco Susceptibility",
+    x = expression(theta),
+    y = "Conditional Reliability"
+  )
+```
+```{r Next-year maximum information by product}
+theta_grid <- matrix(seq(-3, 4, by = 0.05))
+
+nextyear_info_list <- lapply(fit_product_grm, function(x) {
+  item_names <- rownames(
+    mirt::coef(x$fit, IRTpars = TRUE, simplify = TRUE)$items
+  )
+
+  nextyear_position <- which(stringr::str_detect(item_names, "nextyear"))
+
+  info <- mirt::iteminfo(
+    mirt::extract.item(x$fit, nextyear_position),
+    Theta = theta_grid
+  )
+
+  data.frame(
+    theta = as.vector(theta_grid),
+    information = info,
+    product = x$product,
+    product_label = x$product_label
+  )
+})
+
+nextyear_info_df <- dplyr::bind_rows(nextyear_info_list)
+
+nextyear_info_summary <- nextyear_info_df %>%
+  dplyr::group_by(product, product_label) %>%
+  dplyr::summarise(
+    max_information = max(information, na.rm = TRUE),
+    theta_at_max_information = theta[which.max(information)],
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    max_information = round(max_information, 2),
+    theta_at_max_information = round(theta_at_max_information, 2)
+  ) %>%
+  dplyr::arrange(dplyr::desc(max_information))
+
+nextyear_info_summary
+
+ggplot2::ggplot(
+  nextyear_info_summary,
+  ggplot2::aes(
+    x = reorder(product_label, max_information),
+    y = max_information
+  )
+) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::coord_flip() +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::labs(
+    title = "Maximum Information for Next-Year Intention Item",
+    x = NULL,
+    y = "Maximum Item Information"
+  )
+```
+
+#Short-form screener
+```{r Short-form susceptibility setup}
+# Full product universe, IQOS excluded
+product_names_main <- names(product_items)
+
+nextyear_items <- paste0(product_names_main, "_nextyear")
+soon_items <- paste0(product_names_main, "_soon")
+
+short_nextyear_items <- nextyear_items
+short_intention_items <- c(nextyear_items, soon_items)
+
+# Check variables exist
+setdiff(short_nextyear_items, names(PATH_broad_sus_analytic))
+setdiff(short_intention_items, names(PATH_broad_sus_analytic))
+```
+```{r Short-form CFA models}
+# Helper to extract fit measures as a clean one-row data frame
+get_lavaan_fit <- function(fit, model_name) {
+  fit_values <- lavaan::fitMeasures(
+    fit,
+    c("cfi", "tli", "rmsea", "srmr")
+  )
+
+  data.frame(
+    model = model_name,
+    cfi = as.numeric(fit_values["cfi"]),
+    tli = as.numeric(fit_values["tli"]),
+    rmsea = as.numeric(fit_values["rmsea"]),
+    srmr = as.numeric(fit_values["srmr"])
+  )
+}
+
+# Next-year only: one general susceptibility factor
+nextyear_model <- paste0(
+  "general_sus =~ ",
+  paste(short_nextyear_items, collapse = " + ")
+)
+
+nextyear_data <- PATH_broad_sus_analytic %>%
+  dplyr::filter(rowSums(!is.na(dplyr::select(., dplyr::all_of(short_nextyear_items)))) > 0)
+
+fit_nextyear <- lavaan::cfa(
+  model = nextyear_model,
+  data = nextyear_data,
+  ordered = short_nextyear_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Try-soon only: one general susceptibility factor
+trysoon_items <- paste0(product_names_main, "_soon")
+
+trysoon_model <- paste0(
+  "general_sus =~ ",
+  paste(trysoon_items, collapse = " + ")
+)
+
+trysoon_data <- PATH_broad_sus_analytic %>%
+  dplyr::filter(rowSums(!is.na(dplyr::select(., dplyr::all_of(trysoon_items)))) > 0)
+
+fit_trysoon <- lavaan::cfa(
+  model = trysoon_model,
+  data = trysoon_data,
+  ordered = trysoon_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Next-year + try-soon: one general susceptibility factor
+intention_model <- paste0(
+  "general_sus =~ ",
+  paste(short_intention_items, collapse = " + ")
+)
+
+intention_data <- PATH_broad_sus_analytic %>%
+  dplyr::filter(rowSums(!is.na(dplyr::select(., dplyr::all_of(short_intention_items)))) > 0)
+
+fit_intention <- lavaan::cfa(
+  model = intention_model,
+  data = intention_data,
+  ordered = short_intention_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+# Summaries if needed
+summary(fit_nextyear, fit.measures = TRUE, standardized = TRUE)
+summary(fit_trysoon, fit.measures = TRUE, standardized = TRUE)
+summary(fit_intention, fit.measures = TRUE, standardized = TRUE)
+
+# Short-form model fit comparison
+short_form_fit <- dplyr::bind_rows(
+  get_lavaan_fit(fit_general_factor, "Full 36-item second-order model"),
+  get_lavaan_fit(fit_nextyear, "Short form: next-year only"),
+  get_lavaan_fit(fit_trysoon, "Short form: try-soon only"),
+  get_lavaan_fit(fit_intention, "Short form: next-year + try-soon")
+) %>%
+  dplyr::mutate(
+    dplyr::across(c(cfi, tli, rmsea, srmr), ~ round(.x, 3))
+  )
+
+short_form_fit
+```
+```{r Short-form IRT information}
+# Helper to fit general GRM and extract information curve
+fit_short_grm_info <- function(data, items, label, theta_grid = seq(-3, 4, by = 0.05)) {
+  item_data <- data %>%
+    dplyr::select(dplyr::all_of(items)) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric))
+
+  item_data <- item_data[rowSums(!is.na(item_data)) > 0, ]
+
+  fit <- mirt::mirt(
+    data = item_data,
+    model = 1,
+    itemtype = "graded",
+    verbose = FALSE
+  )
+
+  info <- mirt::testinfo(fit, Theta = matrix(theta_grid))
+
+  list(
+    fit = fit,
+    info = data.frame(
+      theta = theta_grid,
+      test_info = info,
+      form = label
+    )
+  )
+}
+
+full_grm_info <- fit_short_grm_info(
+  PATH_broad_sus_analytic,
+  broad_sus_items,
+  "Full 36-item form"
+)
+
+nextyear_grm_info <- fit_short_grm_info(
+  PATH_broad_sus_analytic,
+  short_nextyear_items,
+  "Next-year only"
+)
+
+intention_grm_info <- fit_short_grm_info(
+  PATH_broad_sus_analytic,
+  short_intention_items,
+  "Next-year + try-soon"
+)
+
+short_form_info_df <- dplyr::bind_rows(
+  full_grm_info$info,
+  nextyear_grm_info$info,
+  intention_grm_info$info
+)
+
+ggplot2::ggplot(
+  short_form_info_df,
+  ggplot2::aes(x = theta, y = test_info, color = form, linetype = form)
+) +
+  ggplot2::geom_line(linewidth = 1.1) +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::labs(
+    title = "Test Information by Susceptibility Battery Length",
+    x = expression(theta),
+    y = "Test Information",
+    color = NULL,
+    linetype = NULL
+  )
+```
+```{r Short-form information summary}
+short_form_info_summary <- short_form_info_df %>%
+  dplyr::group_by(form) %>%
+  dplyr::summarise(
+    max_information = max(test_info, na.rm = TRUE),
+    theta_at_max_information = theta[which.max(test_info)],
+    mean_information_theta_0_to_3 = mean(test_info[theta >= 0 & theta <= 3], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    dplyr::across(where(is.numeric), ~ round(.x, 2))
+  ) %>%
+  dplyr::arrange(dplyr::desc(max_information))
+
+short_form_info_summary
+```
+```{r Short-form try-soon only}
+trysoon_items <- paste0(product_names_main, "_soon")
+
+# Check variables exist
+setdiff(trysoon_items, names(PATH_broad_sus_analytic))
+
+trysoon_model <- paste0(
+  "general_sus =~ ",
+  paste(trysoon_items, collapse = " + ")
+)
+
+fit_trysoon <- lavaan::cfa(
+  model = trysoon_model,
+  data = PATH_broad_sus_analytic,
+  ordered = trysoon_items,
+  estimator = "WLSMV",
+  missing = "pairwise"
+)
+
+summary(fit_trysoon, fit.measures = TRUE, standardized = TRUE)
+
+# Updated short-form fit table
+short_form_fit <- dplyr::bind_rows(
+  get_lavaan_fit(fit_general_factor, "Full 36-item second-order model"),
+  get_lavaan_fit(fit_nextyear, "Short form: next-year only"),
+  get_lavaan_fit(fit_trysoon, "Short form: try-soon only"),
+  get_lavaan_fit(fit_intention, "Short form: next-year + try-soon")
+) %>%
+  dplyr::mutate(
+    dplyr::across(c(cfi, tli, rmsea, srmr), ~ round(.x, 3))
+  )
+
+short_form_fit
+```
+```{r Short-form IRT information with try-soon}
+trysoon_grm_info <- fit_short_grm_info(
+  PATH_broad_sus_analytic,
+  trysoon_items,
+  "Try-soon only"
+)
+
+short_form_info_df <- dplyr::bind_rows(
+  full_grm_info$info,
+  nextyear_grm_info$info,
+  trysoon_grm_info$info,
+  intention_grm_info$info
+)
+
+ggplot2::ggplot(
+  short_form_info_df,
+  ggplot2::aes(x = theta, y = test_info, color = form, linetype = form)
+) +
+  ggplot2::geom_line(linewidth = 1.1) +
+  ggplot2::theme_bw(base_size = 13) +
+  ggplot2::labs(
+    title = "Test Information by Susceptibility Battery Length",
+    x = expression(theta),
+    y = "Test Information",
+    color = NULL,
+    linetype = NULL
+  )
+
+short_form_info_summary <- short_form_info_df %>%
+  dplyr::group_by(form) %>%
+  dplyr::summarise(
+    max_information = max(test_info, na.rm = TRUE),
+    theta_at_max_information = theta[which.max(test_info)],
+    mean_information_theta_0_to_3 = mean(test_info[theta >= 0 & theta <= 3], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    dplyr::across(where(is.numeric), ~ round(.x, 2))
+  ) %>%
+  dplyr::arrange(dplyr::desc(max_information))
+
+short_form_info_summary
+```
+```{r Try-soon OCC by product}
+# Theta grid
+theta_grid <- matrix(seq(-3, 4, by = 0.05))
+
+# Extract OCCs for try-soon item from each product-specific GRM
+trysoon_occ_list <- lapply(fit_product_grm, function(x) {
+  item_names <- rownames(
+    mirt::coef(x$fit, IRTpars = TRUE, simplify = TRUE)$items
+  )
+
+  trysoon_position <- which(stringr::str_detect(item_names, "_soon$"))
+
+  probs <- mirt::probtrace(
+    mirt::extract.item(x$fit, trysoon_position),
+    Theta = theta_grid
+  )
+
+  probs_df <- as.data.frame(probs)
+  colnames(probs_df) <- paste0("Response_", seq_len(ncol(probs_df)))
+
+  probs_df %>%
+    dplyr::mutate(
+      theta = as.vector(theta_grid),
+      product = x$product,
+      product_label = x$product_label
+    ) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::starts_with("Response_"),
+      names_to = "response",
+      values_to = "probability"
+    ) %>%
+    dplyr::mutate(
+      response = dplyr::case_when(
+        response == "Response_1" ~ "Definitely not",
+        response == "Response_2" ~ "Probably not",
+        response == "Response_3" ~ "Probably yes",
+        response == "Response_4" ~ "Definitely yes",
+        TRUE ~ response
+      ),
+      response = factor(
+        response,
+        levels = c(
+          "Definitely not",
+          "Probably not",
+          "Probably yes",
+          "Definitely yes"
+        )
+      )
+    )
+})
+
+trysoon_occ_df <- dplyr::bind_rows(trysoon_occ_list)
+
+# Plot OCCs by product
+ggplot2::ggplot(
+  trysoon_occ_df,
+  ggplot2::aes(
+    x = theta,
+    y = probability,
+    color = response,
+    linetype = response
+  )
+) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::facet_wrap(~ product_label, ncol = 3) +
+  ggplot2::coord_cartesian(xlim = c(-1, 4), ylim = c(0, 1)) +
+  ggplot2::theme_bw(base_size = 12) +
+  ggplot2::theme(
+    legend.position = "bottom",
+    panel.grid.minor = ggplot2::element_blank()
+  ) +
+  ggplot2::labs(
+    title = "Option Characteristic Curves for Try-Soon Items",
+    x = expression(theta),
+    y = "Response Probability",
+    color = NULL,
+    linetype = NULL
+  )
+```
+
