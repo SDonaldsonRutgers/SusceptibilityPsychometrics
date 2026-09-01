@@ -18,6 +18,7 @@ library(lavaan)
 library(semTools)
 library(tidyverse)
 ```
+
 ```{r Import IPSOS data}
 IPSOS_Youth <- read_excel("Youth Ipsos 2026_Data for Scott.xlsx")
 
@@ -1976,4 +1977,554 @@ ggplot2::ggplot(
     linetype = NULL
   )
 ```
+#Practical scoring and revised information figures
 
+```{r Product-specific observed subscale scores}
+# Create practical product scores on the original 1-4 response metric.
+# A product score is calculated only when all four constituent items are observed.
+product_score_data <- PATH_broad_sus_analytic
+
+for (prod in names(product_items_main)) {
+  items <- product_items_main[[prod]]
+  score_name <- paste0(prod, "_score")
+
+  product_score_data[[score_name]] <- ifelse(
+    rowSums(!is.na(product_score_data[, items])) == length(items),
+    rowMeans(product_score_data[, items], na.rm = FALSE),
+    NA_real_
+  )
+}
+
+product_score_names <- paste0(names(product_items_main), "_score")
+
+product_score_data$n_product_scores <- rowSums(
+  !is.na(product_score_data[, product_score_names])
+)
+
+# The availability distribution is essential because PATH routing differs by product.
+product_score_availability <- product_score_data %>%
+  dplyr::count(n_product_scores, name = "n") %>%
+  dplyr::mutate(percent = 100 * n / sum(n))
+
+product_score_availability
+```
+
+```{r Product-specific ordinal omega}
+# Estimate categorical omega separately for each four-item product scale.
+# Complete cases are used within product to match the product-specific GRM samples.
+product_reliability_results <- lapply(names(product_items_main), function(prod) {
+  items <- product_items_main[[prod]]
+
+  dat <- PATH_broad_sus_analytic %>%
+    dplyr::select(dplyr::all_of(items)) %>%
+    tidyr::drop_na()
+
+  model_text <- paste0(
+    prod, "_sus =~ ",
+    paste(items, collapse = " + ")
+  )
+
+  fit <- lavaan::cfa(
+    model = model_text,
+    data = dat,
+    ordered = items,
+    estimator = "WLSMV"
+  )
+
+  data.frame(
+    product = prod,
+    product_label = unname(product_labels[prod]),
+    n = nrow(dat),
+    ordinal_omega = unname(
+      semTools::compRelSEM(fit, ord.scale = TRUE)[1]
+    )
+  )
+})
+
+product_reliability_table <- dplyr::bind_rows(product_reliability_results) %>%
+  dplyr::mutate(ordinal_omega = round(ordinal_omega, 3))
+
+product_reliability_table
+range(product_reliability_table$ordinal_omega)
+```
+
+```{r Latent product correlation reporting}
+# Report the correlations among product factors from the correlated nine-factor CFA.
+# These are latent correlations, not correlations among observed raw scores.
+latent_product_correlation_matrix <- lavaan::lavInspect(
+  fit_product_factors,
+  "cor.lv"
+)
+
+latent_product_correlation_table <- as.data.frame(
+  as.table(latent_product_correlation_matrix)
+) %>%
+  dplyr::rename(factor_1 = Var1, factor_2 = Var2, correlation = Freq) %>%
+  dplyr::filter(as.numeric(factor_1) > as.numeric(factor_2)) %>%
+  dplyr::arrange(dplyr::desc(correlation))
+
+latent_product_correlation_table
+range(latent_product_correlation_table$correlation)
+```
+
+```{r Higher-order scoring sensitivity}
+# Extract standardized higher-order loadings.
+higher_order_loading_table <- lavaan::standardizedSolution(
+  fit_general_factor
+) %>%
+  dplyr::filter(lhs == "general_sus", op == "=~") %>%
+  dplyr::transmute(
+    product_factor = rhs,
+    product = stringr::str_remove(rhs, "_sus$"),
+    product_label = unname(product_labels[product]),
+    standardized_loading = est.std
+  )
+
+higher_order_loading_table
+range(higher_order_loading_table$standardized_loading)
+
+# Compare equal and loading-weighted composites only among respondents with all
+# nine product scores. This avoids changing the meaning of the composite across
+# respondents, but it is a selected subgroup created by PATH product routing.
+complete_nine_product_scores <- product_score_data %>%
+  dplyr::filter(n_product_scores == length(product_score_names))
+
+complete_score_matrix <- complete_nine_product_scores %>%
+  dplyr::select(dplyr::all_of(product_score_names))
+
+standardized_score_matrix <- scale(complete_score_matrix)
+
+weight_lookup <- stats::setNames(
+  higher_order_loading_table$standardized_loading,
+  paste0(higher_order_loading_table$product, "_score")
+)
+
+higher_order_weights <- weight_lookup[product_score_names]
+
+scoring_comparison <- complete_nine_product_scores %>%
+  dplyr::transmute(
+    equal_weight_raw = rowMeans(complete_score_matrix),
+    equal_weight_standardized = rowMeans(standardized_score_matrix),
+    loading_weighted_standardized = as.numeric(
+      standardized_score_matrix %*% higher_order_weights /
+        sum(higher_order_weights)
+    )
+  )
+
+scoring_agreement_matrix <- stats::cor(scoring_comparison)
+scoring_agreement_matrix
+
+scoring_sensitivity_summary <- data.frame(
+  complete_nine_n = nrow(scoring_comparison),
+  raw_vs_equal_standardized = scoring_agreement_matrix[
+    "equal_weight_raw", "equal_weight_standardized"
+  ],
+  equal_vs_loading_weighted = scoring_agreement_matrix[
+    "equal_weight_standardized", "loading_weighted_standardized"
+  ],
+  raw_vs_loading_weighted = scoring_agreement_matrix[
+    "equal_weight_raw", "loading_weighted_standardized"
+  ]
+) %>%
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 3)))
+
+scoring_sensitivity_summary
+```
+
+```{r General composite internal consistency}
+# Evaluate internal consistency of the nine scored product subscales in the
+# complete-nine subgroup. This supports only a sensitivity analysis for a simple
+# composite; it does not establish routing rules or predictive validity.
+general_score_model <- paste0(
+  "general_score =~ ",
+  paste(product_score_names, collapse = " + ")
+)
+
+fit_general_observed_score <- lavaan::cfa(
+  model = general_score_model,
+  data = complete_nine_product_scores,
+  estimator = "MLR"
+)
+
+general_composite_reliability <- data.frame(
+  n = nrow(complete_nine_product_scores),
+  omega = unname(
+    semTools::compRelSEM(
+      fit_general_observed_score,
+      ord.scale = FALSE,
+      return.df = FALSE
+    )[1]
+  ),
+  standardized_alpha = psych::alpha(
+    complete_score_matrix,
+    check.keys = FALSE,
+    warnings = FALSE
+  )$total$std.alpha
+) %>%
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 3)))
+
+general_composite_fit <- lavaan::fitMeasures(
+  fit_general_observed_score,
+  c("cfi.robust", "tli.robust", "rmsea.robust", "srmr")
+)
+
+general_composite_fit_table <- data.frame(
+  measure = names(general_composite_fit),
+  value = as.numeric(general_composite_fit)
+) %>%
+  dplyr::mutate(value = round(value, 3))
+
+general_composite_reliability
+general_composite_fit_table
+```
+
+```{r Product-specific information functions}
+# Derive all full- and brief-form curves from the same product-specific GRM.
+# This puts every comparison within a product on the same theta metric.
+theta_values <- seq(-3, 4, by = 0.05)
+theta_matrix <- matrix(theta_values)
+
+product_information_results <- lapply(fit_product_grm, function(x) {
+  item_names <- rownames(
+    mirt::coef(x$fit, IRTpars = TRUE, simplify = TRUE)$items
+  )
+
+  item_information <- vapply(
+    seq_along(item_names),
+    function(i) {
+      mirt::iteminfo(
+        mirt::extract.item(x$fit, i),
+        Theta = theta_matrix
+      )
+    },
+    numeric(length(theta_values))
+  )
+
+  colnames(item_information) <- item_names
+
+  nextyear_position <- which(stringr::str_detect(item_names, "_nextyear$"))
+  trysoon_position <- which(stringr::str_detect(item_names, "_soon$"))
+
+  full_information <- rowSums(item_information)
+
+  information_wide <- data.frame(
+    product = x$product,
+    product_label = x$product_label,
+    theta = theta_values,
+    full_information = full_information,
+    full_standard_error = 1 / sqrt(full_information),
+    nextyear_trysoon_information = rowSums(
+      item_information[, c(nextyear_position, trysoon_position), drop = FALSE]
+    ),
+    nextyear_information = item_information[, nextyear_position],
+    trysoon_information = item_information[, trysoon_position]
+  )
+
+  information_long <- information_wide %>%
+    dplyr::select(
+      product,
+      product_label,
+      theta,
+      full_information,
+      nextyear_trysoon_information,
+      nextyear_information,
+      trysoon_information
+    ) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::ends_with("information"),
+      names_to = "form",
+      values_to = "information"
+    ) %>%
+    dplyr::mutate(
+      form = dplyr::recode(
+        form,
+        full_information = "Full four-item scale",
+        nextyear_trysoon_information = "Next year + try soon",
+        nextyear_information = "Next year only",
+        trysoon_information = "Try soon only"
+      )
+    )
+
+  list(wide = information_wide, long = information_long)
+})
+
+product_information_wide <- dplyr::bind_rows(
+  lapply(product_information_results, `[[`, "wide")
+)
+
+product_information_long <- dplyr::bind_rows(
+  lapply(product_information_results, `[[`, "long")
+) %>%
+  dplyr::mutate(
+    form = factor(
+      form,
+      levels = c(
+        "Full four-item scale",
+        "Next year + try soon",
+        "Next year only",
+        "Try soon only"
+      )
+    )
+  )
+
+# Summarize where each full product scale provides maximum information.
+product_information_peak_table <- product_information_wide %>%
+  dplyr::group_by(product, product_label) %>%
+  dplyr::slice_max(full_information, n = 1, with_ties = FALSE) %>%
+  dplyr::transmute(
+    product,
+    product_label,
+    maximum_information = full_information,
+    theta_at_maximum_information = theta,
+    minimum_standard_error = full_standard_error
+  ) %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(maximum_information, theta_at_maximum_information, minimum_standard_error),
+      ~ round(.x, 2)
+    )
+  )
+
+product_information_peak_table
+
+# Percentage of full-scale information retained from theta = 0 to 3.
+# The same equally spaced grid is used for all forms, so the ratio of mean
+# information is equivalent to a ratio of areas under the curves.
+brief_form_information_retention <- product_information_long %>%
+  dplyr::filter(theta >= 0, theta <= 3) %>%
+  dplyr::group_by(product, product_label, form) %>%
+  dplyr::summarise(
+    mean_information_theta_0_to_3 = mean(information),
+    .groups = "drop"
+  ) %>%
+  dplyr::group_by(product, product_label) %>%
+  dplyr::mutate(
+    percent_full_information_retained =
+      100 * mean_information_theta_0_to_3 /
+      mean_information_theta_0_to_3[form == "Full four-item scale"]
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(
+    mean_information_theta_0_to_3 = round(mean_information_theta_0_to_3, 2),
+    percent_full_information_retained = round(percent_full_information_retained, 1)
+  )
+
+brief_form_information_retention
+```
+
+```{r Figure 1 product information and standard error, fig.width=11, fig.height=9}
+# Figure 1: full four-item information and conditional SE for each product.
+# A separate dual-axis transformation is calculated within every product panel.
+make_information_se_panel <- function(product_data) {
+  # SE becomes extremely large where information approaches zero. Cap the
+  # displayed SE at 2.0 so the informative region remains visible; retain the
+  # uncapped values in product_information_wide for all calculations.
+  product_data <- product_data %>%
+    dplyr::mutate(full_standard_error_display = pmin(full_standard_error, 2))
+
+  scaling_constant <- max(product_data$full_information, na.rm = TRUE) / 2
+
+  ggplot2::ggplot(product_data, ggplot2::aes(x = theta)) +
+    ggplot2::geom_line(
+      ggplot2::aes(y = full_information, linetype = "Test information"),
+      linewidth = 0.9,
+      color = "black"
+    ) +
+    ggplot2::geom_line(
+      ggplot2::aes(
+        y = full_standard_error_display * scaling_constant,
+        linetype = "Standard error"
+      ),
+      linewidth = 0.9,
+      color = "gray45"
+    ) +
+    ggplot2::scale_y_continuous(
+      name = "Information",
+      sec.axis = ggplot2::sec_axis(
+        ~ . / scaling_constant,
+        name = "Standard error"
+      )
+    ) +
+    ggplot2::scale_linetype_manual(
+      values = c("Test information" = "solid", "Standard error" = "dashed"),
+      name = NULL
+    ) +
+    ggplot2::coord_cartesian(xlim = c(-1, 4)) +
+    ggplot2::theme_bw(base_size = 10) +
+    ggplot2::theme(
+      legend.position = "bottom",
+      panel.grid.minor = ggplot2::element_blank(),
+      plot.title = ggplot2::element_text(size = 10, hjust = 0.5)
+    ) +
+    ggplot2::labs(
+      title = unique(product_data$product_label),
+      x = expression(theta)
+    )
+}
+
+information_se_panels <- split(
+  product_information_wide,
+  factor(
+    product_information_wide$product,
+    levels = names(product_items_main)
+  )
+) %>%
+  lapply(make_information_se_panel)
+
+figure_1_product_information <- patchwork::wrap_plots(
+  information_se_panels,
+  ncol = 3,
+  guides = "collect"
+) +
+  patchwork::plot_annotation(
+    title = "Test Information and Standard Error for Product-Specific Susceptibility Scales",
+    subtitle = "Higher information and lower standard error indicate greater measurement precision; displayed SE is capped at 2.0"
+  )
+
+figure_1_product_information
+
+if (!dir.exists("analysis_outputs")) dir.create("analysis_outputs")
+
+ggplot2::ggsave(
+  "analysis_outputs/Figure_1_product_information_and_SE.png",
+  figure_1_product_information,
+  width = 11,
+  height = 9,
+  dpi = 600
+)
+
+ggplot2::ggsave(
+  "analysis_outputs/Figure_1_product_information_and_SE.pdf",
+  figure_1_product_information,
+  width = 11,
+  height = 9
+)
+```
+
+```{r Figure 2 within-product brief-form information, fig.width=11, fig.height=8}
+# Figure 2: full and brief alternatives, calibrated within the same product GRM.
+figure_2_within_product_information <- ggplot2::ggplot(
+  product_information_long %>%
+    dplyr::mutate(
+      product_label = factor(
+        product_label,
+        levels = unname(product_labels[names(product_items_main)])
+      )
+    ),
+  ggplot2::aes(
+    x = theta,
+    y = information,
+    color = form,
+    linetype = form
+  )
+) +
+  ggplot2::geom_line(linewidth = 0.85) +
+  ggplot2::facet_wrap(
+    ~ product_label,
+    ncol = 3,
+    scales = "free_y"
+  ) +
+  ggplot2::coord_cartesian(xlim = c(-1, 4)) +
+  ggplot2::scale_color_manual(
+    values = c("black", "#0072B2", "#D55E00", "#009E73"),
+    name = NULL
+  ) +
+  ggplot2::scale_linetype_manual(
+    values = c("solid", "longdash", "dotted", "dotdash"),
+    name = NULL
+  ) +
+  ggplot2::theme_bw(base_size = 11) +
+  ggplot2::theme(
+    legend.position = "bottom",
+    panel.grid.minor = ggplot2::element_blank()
+  ) +
+  ggplot2::labs(
+    title = "Information Retained by Brief Susceptibility Forms Within Product",
+    subtitle = "All alternatives within a panel use parameters from the same product-specific GRM",
+    x = expression(theta),
+    y = "Test information"
+  )
+
+figure_2_within_product_information
+
+ggplot2::ggsave(
+  "analysis_outputs/Figure_2_within_product_information.png",
+  figure_2_within_product_information,
+  width = 11,
+  height = 8,
+  dpi = 600
+)
+
+ggplot2::ggsave(
+  "analysis_outputs/Figure_2_within_product_information.pdf",
+  figure_2_within_product_information,
+  width = 11,
+  height = 8
+)
+```
+
+```{r Export practical scoring and information results}
+# Export review tables so manuscript values do not need to be transcribed by hand.
+if (!dir.exists("analysis_outputs")) dir.create("analysis_outputs")
+
+readr::write_csv(
+  product_reliability_table,
+  "analysis_outputs/product_subscale_reliability.csv"
+)
+
+readr::write_csv(
+  latent_product_correlation_table,
+  "analysis_outputs/latent_product_correlations.csv"
+)
+
+readr::write_csv(
+  higher_order_loading_table,
+  "analysis_outputs/higher_order_loadings.csv"
+)
+
+readr::write_csv(
+  product_score_availability,
+  "analysis_outputs/product_score_availability.csv"
+)
+
+readr::write_csv(
+  scoring_sensitivity_summary,
+  "analysis_outputs/scoring_sensitivity_summary.csv"
+)
+
+readr::write_csv(
+  general_composite_reliability,
+  "analysis_outputs/general_composite_reliability.csv"
+)
+
+readr::write_csv(
+  general_composite_fit_table,
+  "analysis_outputs/general_composite_fit.csv"
+)
+
+readr::write_csv(
+  product_information_peak_table,
+  "analysis_outputs/product_information_peaks.csv"
+)
+
+readr::write_csv(
+  brief_form_information_retention,
+  "analysis_outputs/brief_form_information_retention.csv"
+)
+```
+
+# Harmonized never-user primary analyses
+
+The primary analyses below restrict the sample to respondents with a routed
+curiosity response for every included product. Under the Wave 8 questionnaire
+routing, these respondents were never users of all nine included products;
+nicotine-pouch eligibility additionally required prior awareness. The original
+four response categories are retained for descriptive statistics. Because the
+upper categories were sparse in this harmonized sample, categories 3 and 4 are
+combined consistently for the primary ordinal CFA and graded response models.
+
+```{r Harmonized never-nine primary analysis, cache=TRUE}
+# The sourced analysis exports the sample-flow audit, manuscript tables,
+# model diagnostics, scoring sensitivity results, and publication figures.
+source("harmonized_primary_analysis.R")
+```
